@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-func getInfo(baseUrl string, itemID string, ch chan<- string) {
+func getInfo(baseUrl string, itemID string, ch chan<- []interface{}) {
 
 	// generate authorization header using the id (convert id to base64)
 	auth := base64.URLEncoding.EncodeToString([]byte(itemID))
@@ -33,28 +33,28 @@ func getInfo(baseUrl string, itemID string, ch chan<- string) {
 	res.Body.Close()
 
 	// send response through the channel for printing
-	ch <- string(body[:])
+	ch <- []interface{}{string(body[:]), res.StatusCode}
 }
 
 func main() {
 
 	/* Idea is to create 5 Goroutines to keep sending GET requests simultaneously */
 
-	// baseUrl := "http://localhost:8080/items/"
+	baseUrl := "http://localhost:8080/items/"
 	// baseUrl := os.Args[1]
-	baseUrl := "https://challenges.qluv.io/items/"
+	// baseUrl := "https://challenges.qluv.io/items/"
 
 	// create 5 channels per Goroutine
-	var chans [5]chan string
+	var chans [5]chan []interface{}
 	for i := range chans {
-		chans[i] = make(chan string)
+		chans[i] = make(chan []interface{})
 	}
 
 	// declare 5 items to send per Goroutine
 	var items [5]string
 
 	// genereate a sample itemList for testing
-	var itemList [100]string
+	itemList := make([]string, 100, 200)
 	for i := 0; i < 100; i++ {
 		itemList[i] = fmt.Sprint(rand.Intn(18))
 	}
@@ -66,8 +66,7 @@ func main() {
 	for current := 0; current < len(itemList); {
 		// copy top 5 ids from itemList to items[]
 
-		// declaring this outside for loop to retain it's value afterwards
-		var idx int
+		var idx int // declaring this outside for loop to retain it's value afterwards
 		for idx = 0; idx < 5 && current < len(itemList); current++ {
 			// check if current id is already queried
 			if !dict[itemList[current]] {
@@ -84,15 +83,22 @@ func main() {
 		}
 
 		// create 5 buffer to store results per Goroutine
-		var buff [5]string
+		var buff [5][]interface{}
 		for i := 0; i < idx; i++ {
 			buff[i] = <-chans[i]
+			// print responses per Goroutine
+			fmt.Println(buff[i][0].(string))
+			// check the HTTP response
+			if buff[i][1].(int) != 200 {
+				// add it back to the queue for retrying
+				dict[items[i]] = false
+				itemList = append(itemList, items[i])
+			}
 		}
+	}
 
-		// print responses per Goroutine
-		for i := 0; i < idx; i++ {
-			fmt.Println(buff[i])
-		}
+	for i := range chans {
+		close(chans[i])
 	}
 
 }
