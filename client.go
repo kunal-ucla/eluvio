@@ -7,9 +7,13 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"sync"
+	"time"
 )
 
-func getInfo(baseUrl string, itemID string, ch chan<- []interface{}) {
+var wg = &sync.WaitGroup{}
+
+func sendRequest(baseUrl string, itemID string) []interface{} {
 
 	// generate authorization header using the id (convert id to base64)
 	auth := base64.URLEncoding.EncodeToString([]byte(itemID))
@@ -21,19 +25,49 @@ func getInfo(baseUrl string, itemID string, ch chan<- []interface{}) {
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", auth)
-	res, err := client.Do(req)
 
-	// log the error if any during the GET request
-	if err != nil {
-		log.Fatal(err)
+	var body []byte
+	var err error
+	var res *http.Response
+	var backoffSchedule = []time.Duration{
+		1 * time.Second,
+		3 * time.Second,
+		10 * time.Second,
 	}
 
-	// read the response and close the response body
-	body, _ := ioutil.ReadAll(res.Body)
-	res.Body.Close()
+	for _, backoff := range backoffSchedule {
+		// perfrom the get request
+		res, err = client.Do(req)
+
+		// log the error if any during the GET request
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// read the response and close the response body
+		body, _ = ioutil.ReadAll(res.Body)
+		code := res.StatusCode
+		res.Body.Close()
+
+		// if success, break out
+		if code == 200 {
+			break
+		}
+
+		// sleep till backoff timer for retrying
+		time.Sleep(backoff)
+	}
 
 	// send response through the channel for printing
-	ch <- []interface{}{string(body[:]), res.StatusCode}
+	return []interface{}{string(body[:]), itemID}
+}
+
+func requestInfo(baseUrl string, item string) {
+	channel := make(chan []interface{})
+	buff := sendRequest(baseUrl, item)
+	fmt.Printf("Info for item[ %s ] received as [ %s ]\n", buff[1].(string), buff[0].(string))
+	close(channel)
+	wg.Done()
 }
 
 func main() {
@@ -44,17 +78,11 @@ func main() {
 	// baseUrl := os.Args[1]
 	// baseUrl := "https://challenges.qluv.io/items/"
 
-	// create 5 channels per Goroutine
-	var chans [5]chan []interface{}
-	for i := range chans {
-		chans[i] = make(chan []interface{})
-	}
-
 	// declare 5 items to send per Goroutine
 	var items [5]string
 
 	// genereate a sample itemList for testing
-	itemList := make([]string, 100, 200)
+	itemList := make([]string, 100)
 	for i := 0; i < 100; i++ {
 		itemList[i] = fmt.Sprint(rand.Intn(18))
 	}
@@ -79,26 +107,9 @@ func main() {
 
 		// create 5 Goroutines
 		for i := 0; i < idx; i++ {
-			go getInfo(baseUrl, items[i], chans[i])
-		}
-
-		// create 5 buffer to store results per Goroutine
-		var buff [5][]interface{}
-		for i := 0; i < idx; i++ {
-			buff[i] = <-chans[i]
-			// print responses per Goroutine
-			fmt.Println(buff[i][0].(string))
-			// check the HTTP response
-			if buff[i][1].(int) != 200 {
-				// add it back to the queue for retrying
-				dict[items[i]] = false
-				itemList = append(itemList, items[i])
-			}
+			wg.Add(1)
+			go requestInfo(baseUrl, items[i])
 		}
 	}
-
-	for i := range chans {
-		close(chans[i])
-	}
-
+	wg.Wait()
 }
