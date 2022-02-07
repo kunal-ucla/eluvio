@@ -46,7 +46,7 @@ func itemFetcher(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// added delay, as if it's processing the request
-		time.Sleep(2 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// reduce count before exiting handler
 		mu.Lock()
