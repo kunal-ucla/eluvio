@@ -26,6 +26,7 @@ var backoffSchedule = []time.Duration{
 var mu sync.RWMutex
 var dict map[string]bool = make(map[string]bool) // dictionary for already queried items
 
+// this function simply perform the GET request and returns the response - nothing else here
 func sendRequest(baseUrl string, itemID string) []interface{} {
 
 	// generate authorization header using the id (convert id to base64)
@@ -56,6 +57,8 @@ func sendRequest(baseUrl string, itemID string) []interface{} {
 	return []interface{}{string(body[:]), itemID, code}
 }
 
+/* this will be our main goRoutine (5 of these wil be running) which will invoke sendRequest() sequentially
+as the itemID is received from the channel along with baseURL of http request to be made */
 func requestInfo(baseUrl string, channel chan []interface{}) {
 	// keep picking available item query requests from the channel (per goRoutine)
 	for item := range channel {
@@ -88,6 +91,8 @@ func requestInfo(baseUrl string, channel chan []interface{}) {
 	}
 }
 
+/* this is our backoff goRoutine; the main goRoutine moves ahead after a fail status code
+while this function re-adds the failed itemID back to the channel after backoff timer */
 func backoffHandler(item string, attempt int, channel chan []interface{}) {
 	// start backoff timer according to the current attempt
 	time.Sleep(backoffSchedule[attempt])
