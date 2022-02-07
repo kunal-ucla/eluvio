@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -16,7 +15,6 @@ var mu sync.RWMutex
 
 func itemFetcher(w http.ResponseWriter, r *http.Request) {
 	itemId := r.URL.Path[7:]
-	int_itemId, _ := strconv.Atoi(itemId)
 	auth := r.Header.Get("Authorization")
 	decodeAuth, err := base64.StdEncoding.DecodeString(auth)
 	if err != nil || string(decodeAuth) != itemId {
@@ -34,7 +32,7 @@ func itemFetcher(w http.ResponseWriter, r *http.Request) {
 			// if number of concurrent requests >= 5, return max requests error
 			w.WriteHeader(429)
 			fmt.Fprintf(w, "429 Too Many Requests")
-		} else if rand.Intn(5) == 6 || int_itemId%5 == 4 {
+		} else if rand.Intn(35) == 3 {
 			mu.Unlock()
 			// randomly return errors every once in a while, could happen practically
 			w.WriteHeader(404)
@@ -46,7 +44,7 @@ func itemFetcher(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// added delay, as if it's processing the request
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 
 		// reduce count before exiting handler
 		mu.Lock()
